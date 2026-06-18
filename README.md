@@ -113,14 +113,54 @@ También funciona SDK JS/Python, `mc` (MinIO Client), `rclone`, `s3cmd`, etc.
 
 ## Generar URLs firmadas para imgproxy
 
-En Node: paquete `imgproxy-url`. En Go: `github.com/imgproxy/imgproxy-go`. En CLI:
+imgproxy 3.x+ usa **HMAC-SHA256 → Base64 URL-safe** (sin padding) sobre `salt + path`:
+
+```python
+# Python
+import hmac, hashlib, base64
+
+def sign(key_hex: str, salt_hex: str, path: str) -> str:
+    key  = bytes.fromhex(key_hex)
+    salt = bytes.fromhex(salt_hex)
+    digest = hmac.new(key, salt + path.encode(), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+
+# path incluye el leading slash
+path = "/resize:fit:800:600/plain/s3://media/foto.jpg"
+signed = "/" + sign(IMGPROXY_KEY, IMGPROXY_SALT, path) + path
+# URL final: https://media.jinkoni.com.mx{signed}
+```
+
+### Snippet Bash de uso
 
 ```bash
-echo -n "resize:fit:800:600/plain/s3://media/foto.jpg" | \
-  openssl dgst -sha256 -mac HMAC \
-  -macopt hexkey:$(echo -n $IMGPROXY_KEY | xxd -p) -binary | \
-  xxd -p | cut -c1-32
+IMGPROXY_KEY=...   # 32 hex chars
+IMGPROXY_SALT=...  # 32 hex chars
+PATH_TO_SIGN="/resize:fit:800:600/plain/s3://media/foto.jpg"
+
+SIG=$(python3 -c "
+import hmac, hashlib, base64, sys
+key=bytes.fromhex('$IMGPROXY_KEY')
+salt=bytes.fromhex('$IMGPROXY_SALT')
+digest=hmac.new(key, salt + '$PATH_TO_SIGN'.encode(), hashlib.sha256).digest()
+print(base64.urlsafe_b64encode(digest).rstrip(b'=').decode())
+")
+echo "https://media.jinkoni.com.mx/${SIG}${PATH_TO_SIGN}"
 ```
+
+Clientes oficiales:
+- Node: `imgproxy-url`
+- Go: `github.com/imgproxy/imgproxy-go`
+- Python: `imgproxy` (PyPI)
+
+Verificado end-to-end en este deployment — ejemplo:
+
+```
+/r1kuhxfgpVI8Ih3tmrCUhGQ50IByoe4LmFEPuBDc0qc/resize:fit:100:100/plain/s3://media/test.png
+→ HTTP 200 image/png
+```
+
+> Importante: la porción a firmar es el path junto a su `/` inicial; el HMAC lleva `salt + path` y se codifica con Base64 URL-safe sin relleno `=`.
 
 ## Actualizar sin perder datos
 
