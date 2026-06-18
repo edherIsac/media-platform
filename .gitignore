@@ -1,0 +1,15 @@
+# Secrets
+.env
+*.local
+
+# Run artifacts
+data/
+minio_data/
+caddy_data/
+caddy_config/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
